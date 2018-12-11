@@ -4683,5 +4683,13 @@
     "Generate types for all packages without types": {
         "category": "Message",
         "code": 95068
+	},
+	"This compiler block name is already in use": {
+        "category": "Error",
+        "code": 95069
+	},
+	"Cannot access non-const member of a const type": {
+        "category": "Error",
+        "code": 95070
     }
 }

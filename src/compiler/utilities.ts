@@ -2564,7 +2564,8 @@ namespace ts {
         Normal = 0,             // Function is a normal function
         Generator = 1 << 0,     // Function is a generator function or async generator function
         Async = 1 << 1,         // Function is an async function or an async generator function
-        Invalid = 1 << 2,       // Function is a signature or overload and does not have a body.
+		Invalid = 1 << 2,       // Function is a signature or overload and does not have a body.
+		Const = 1 << 3,			// Function is a constant function
         AsyncGenerator = Async | Generator, // Function is an async generator function
     }
 
@@ -3717,7 +3718,8 @@ namespace ts {
             case SyntaxKind.ConstKeyword: return ModifierFlags.Const;
             case SyntaxKind.DefaultKeyword: return ModifierFlags.Default;
             case SyntaxKind.AsyncKeyword: return ModifierFlags.Async;
-            case SyntaxKind.ReadonlyKeyword: return ModifierFlags.Readonly;
+			case SyntaxKind.ReadonlyKeyword: return ModifierFlags.Readonly;
+			case SyntaxKind.InlineKeyword: return ModifierFlags.Inline;
         }
         return ModifierFlags.None;
     }
@@ -4966,6 +4968,10 @@ namespace ts {
     /** @internal */
     export function getNonAssignedNameOfDeclaration(declaration: Declaration | Expression): DeclarationName | undefined {
         switch (declaration.kind) {
+			/*case SyntaxKind.CompilerBlock:
+				return (<CompilerBlock>declaration).name;*/
+			case SyntaxKind.LifeTimeDeclaration:
+				return (declaration as LifeTimeDeclaration).name;
             case SyntaxKind.Identifier:
                 return declaration as Identifier;
             case SyntaxKind.JSDocPropertyTag:
@@ -6017,7 +6023,8 @@ namespace ts {
             case SyntaxKind.PrivateKeyword:
             case SyntaxKind.ProtectedKeyword:
             case SyntaxKind.ReadonlyKeyword:
-            case SyntaxKind.StaticKeyword:
+			case SyntaxKind.StaticKeyword:
+			case SyntaxKind.InlineKeyword:
                 return true;
         }
         return false;
@@ -6536,7 +6543,11 @@ namespace ts {
             || kind === SyntaxKind.EnumDeclaration
             || kind === SyntaxKind.EnumMember
             || kind === SyntaxKind.ExportSpecifier
-            || kind === SyntaxKind.FunctionDeclaration
+			|| kind === SyntaxKind.FunctionDeclaration
+			|| kind === SyntaxKind.MacroBlock
+			|| kind === SyntaxKind.StaticBlock
+			|| kind === SyntaxKind.LifeTimeDeclaration
+			/*|| kind === SyntaxKind.CompilerBlock*/
             || kind === SyntaxKind.FunctionExpression
             || kind === SyntaxKind.GetAccessor
             || kind === SyntaxKind.ImportClause
@@ -6564,7 +6575,10 @@ namespace ts {
     }
 
     function isDeclarationStatementKind(kind: SyntaxKind) {
-        return kind === SyntaxKind.FunctionDeclaration
+		return kind === SyntaxKind.FunctionDeclaration
+			|| kind === SyntaxKind.MacroBlock
+			|| kind === SyntaxKind.StaticBlock
+			/*|| kind === SyntaxKind.CompilerBlock*/
             || kind === SyntaxKind.MissingDeclaration
             || kind === SyntaxKind.ClassDeclaration
             || kind === SyntaxKind.InterfaceDeclaration

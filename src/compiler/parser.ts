@@ -193,7 +193,9 @@ namespace ts {
                     visitNodes(cbNode, cbNodes, (<ImportTypeNode>node).typeArguments);
             case SyntaxKind.ParenthesizedType:
             case SyntaxKind.TypeOperator:
-                return visitNode(cbNode, (<ParenthesizedTypeNode | TypeOperatorNode>node).type);
+				return visitNode(cbNode, (<ParenthesizedTypeNode | TypeOperatorNode>node).type);
+			case SyntaxKind.ConstType:
+                return visitNode(cbNode, (<ConstTypeNode>node).type);
             case SyntaxKind.IndexedAccessType:
                 return visitNode(cbNode, (<IndexedAccessTypeNode>node).objectType) ||
                     visitNode(cbNode, (<IndexedAccessTypeNode>node).indexType);
@@ -267,7 +269,7 @@ namespace ts {
                 return visitNode(cbNode, (<SpreadElement>node).expression);
             case SyntaxKind.Block:
             case SyntaxKind.ModuleBlock:
-                return visitNodes(cbNode, cbNodes, (<Block>node).statements);
+				return visitNode(cbNode, (<Block>node).lifeTime) || visitNodes(cbNode, cbNodes, (<Block>node).statements);
             case SyntaxKind.SourceFile:
                 return visitNodes(cbNode, cbNodes, (<SourceFile>node).statements) ||
                     visitNode(cbNode, (<SourceFile>node).endOfFileToken);
@@ -509,7 +511,18 @@ namespace ts {
                 }
                 return;
             case SyntaxKind.PartiallyEmittedExpression:
-                return visitNode(cbNode, (<PartiallyEmittedExpression>node).expression);
+				return visitNode(cbNode, (<PartiallyEmittedExpression>node).expression);
+			case SyntaxKind.MacroBlock:
+				return visitNode(cbNode, (<MacroBlock>node).name) ||
+					visitNode(cbNode, (<MacroBlock>node).block);
+			case SyntaxKind.StaticBlock:
+				return visitNode(cbNode, (<StaticBlock>node).name) ||
+					visitNode(cbNode, (<StaticBlock>node).block);
+			case SyntaxKind.LifeTimeDeclaration:
+				return visitNode(cbNode, (<LifeTimeDeclaration>node).name);
+			case SyntaxKind.LifeTimeType:
+				return visitNode(cbNode, (<LifeTimeTypeNode>node).ref) || 
+					visitNode(cbNode, (<LifeTimeTypeNode>node).type);
         }
     }
 
@@ -605,7 +618,10 @@ namespace ts {
         let sourceText: string;
         let nodeCount: number;
         let identifiers: Map<string>;
-        let identifierCount: number;
+		let identifierCount: number;
+		
+		let macroBlocks: MacroBlock[];
+		let staticBlocks: StaticBlock[];
 
         let parsingContext: ParsingContext;
 
@@ -795,7 +811,9 @@ namespace ts {
             parseDiagnostics = [];
             parsingContext = 0;
             identifiers = createMap<string>();
-            identifierCount = 0;
+			identifierCount = 0;
+			macroBlocks = [];
+			staticBlocks = [];
             nodeCount = 0;
 
             switch (scriptKind) {
@@ -827,7 +845,9 @@ namespace ts {
             // Clear any data.  We don't want to accidentally hold onto it for too long.
             parseDiagnostics = undefined!;
             sourceFile = undefined!;
-            identifiers = undefined!;
+			identifiers = undefined!;
+			macroBlocks = undefined!;
+			staticBlocks = undefined!;
             syntaxCursor = undefined;
             sourceText = undefined!;
         }
@@ -855,14 +875,53 @@ namespace ts {
 
             sourceFile.nodeCount = nodeCount;
             sourceFile.identifierCount = identifierCount;
-            sourceFile.identifiers = identifiers;
-            sourceFile.parseDiagnostics = parseDiagnostics;
+			sourceFile.identifiers = identifiers;
+			sourceFile.parseDiagnostics = parseDiagnostics;
+			sourceFile.macroBlocks = macroBlocks;
+			sourceFile.staticBlocks = staticBlocks;
+			let currentSourceFile = sourceFile;
+			/*let currentCompilerBlocks = compilerBlocks;
+			if(compilerBlocks.length != 0){
+				sourceFile.compilerBlocks = compilerBlocks;
+				let compilerSource = ["import * as ts from '/home/debreceni/Projects/TypeScript/built/local/typescript';"];
+				let blockId = -1;
+				for(let block of compilerBlocks){
+					++blockId;
+					let id: string;
+					if(block.name){
+						id = getTextOfIdentifierOrLiteral(block.name);
+					}else{
+						id = '__anonymous__' + 	blockId;
+					}
+					compilerSource.push(`let ${id}: ts.CompilerBlock = this.compilerBlock[${blockId}] as any;`)
+					compilerSource.push(`this.compilerBlock[${blockId}].result = (function(this: ts.CompilerBlock)${
+						sourceText.substring(block.block.pos, block.block.end)
+					}).bind(${id})();`);
+				}
+				let compileTimeScript = ts.createSourceFile(fileName + '__compiler.ts', compilerSource.join('\n'),languageVersion, true);
+				blockId = 0;
+				let visit = function(node: Node){
+					if(node.kind === SyntaxKind.Block && node.parent.kind === SyntaxKind.FunctionExpression){
+						currentCompilerBlocks[blockId++].outerBlock = (<FunctionExpression>node.parent).body;
+					}else{
+						forEachChild(node, visit);
+					}
+				}
+				visit(compileTimeScript);
+				blockId = 0;
+				while(blockId < currentCompilerBlocks.length){
+					let declStmt = <VariableStatement>compileTimeScript.statements[blockId*2 + 1];
+					let decl = declStmt.declarationList.declarations[0];
+					currentCompilerBlocks[blockId++].outerName = decl.name as Identifier;
+				}
+				currentSourceFile.compileTimeScript = compileTimeScript;
+			}*/
 
             if (setParentNodes) {
-                fixupParentReferences(sourceFile);
+                fixupParentReferences(currentSourceFile);
             }
 
-            return sourceFile;
+            return currentSourceFile;
 
             function reportPragmaDiagnostic(pos: number, end: number, diagnostic: DiagnosticMessage) {
                 parseDiagnostics.push(createFileDiagnostic(sourceFile, pos, end, diagnostic));
@@ -920,7 +979,7 @@ namespace ts {
             sourceFile.languageVersion = languageVersion;
             sourceFile.fileName = normalizePath(fileName);
             sourceFile.languageVariant = getLanguageVariant(scriptKind);
-            sourceFile.isDeclarationFile = isDeclarationFile;
+			sourceFile.isDeclarationFile = isDeclarationFile;
             sourceFile.scriptKind = scriptKind;
 
             return sourceFile;
@@ -949,7 +1008,11 @@ namespace ts {
 
         function setAwaitContext(val: boolean) {
             setContextFlag(val, NodeFlags.AwaitContext);
-        }
+		}
+		
+		function setCompilerContext(val: boolean){
+			setContextFlag(val, NodeFlags.CompilerContext);
+		}
 
         function doOutsideOfContext<T>(context: NodeFlags, func: () => T): T {
             // contextFlagsToClear will contain only the context flags that are
@@ -1027,7 +1090,11 @@ namespace ts {
 
         function inYieldContext() {
             return inContext(NodeFlags.YieldContext);
-        }
+		}
+		
+		/*function inCompilerContext() {
+			return inContext(NodeFlags.CompilerContext);
+		}*/
 
         function inDisallowInContext() {
             return inContext(NodeFlags.DisallowInContext);
@@ -1297,8 +1364,8 @@ namespace ts {
             return node;
         }
 
-        function createMissingNode<T extends Node>(kind: T["kind"], reportAtCurrentPosition: boolean, diagnosticMessage: DiagnosticMessage, arg0?: any): T {
-            if (reportAtCurrentPosition) {
+        function createMissingNode<T extends Node>(kind: T["kind"], reportAtCurrentPosition: boolean, diagnosticMessage?: DiagnosticMessage, arg0?: any): T {
+            if (reportAtCurrentPosition && diagnosticMessage) {
                 parseErrorAtPosition(scanner.getStartPos(), 0, diagnosticMessage, arg0);
             }
             else if (diagnosticMessage) {
@@ -1323,7 +1390,15 @@ namespace ts {
                 identifiers.set(text, identifier = text);
             }
             return identifier;
-        }
+		}
+		
+		/*function internBlockIdentifier(text: string): string {
+            let blockIdentifier = blockIdentifiers.get(text);
+            if (blockIdentifier === undefined) {
+                blockIdentifiers.set(text, blockIdentifier = text);
+            }
+            return blockIdentifier;
+		}*/
 
         // An identifier that starts with two underscores has an extra underscore character prepended to it to avoid issues
         // with magic property names like '__proto__'. The 'identifiers' object is used to share a single string instance for
@@ -1346,7 +1421,21 @@ namespace ts {
             const reportAtCurrentPosition = token() === SyntaxKind.EndOfFileToken;
 
             return createMissingNode<Identifier>(SyntaxKind.Identifier, reportAtCurrentPosition, diagnosticMessage || Diagnostics.Identifier_expected);
-        }
+		}
+		
+        /*function createBlockIdentifier(isIdentifier: boolean, diagnosticMessage?: DiagnosticMessage): Identifier {
+            if (isIdentifier) {
+                const node = <Identifier>createNode(SyntaxKind.Identifier);
+                node.escapedText = escapeLeadingUnderscores(scanner.getTokenValue());
+                nextToken();
+                return finishNode(node);
+            }
+
+            // Only for end of file because the error gets reported incorrectly on embedded script tags.
+            const reportAtCurrentPosition = token() === SyntaxKind.EndOfFileToken;
+
+            return createMissingNode<Identifier>(SyntaxKind.Identifier, reportAtCurrentPosition, diagnosticMessage || Diagnostics.Identifier_expected);
+		}*/
 
         function parseIdentifier(diagnosticMessage?: DiagnosticMessage): Identifier {
             return createIdentifier(isIdentifier(), diagnosticMessage);
@@ -1354,6 +1443,10 @@ namespace ts {
 
         function parseIdentifierName(diagnosticMessage?: DiagnosticMessage): Identifier {
             return createIdentifier(tokenIsIdentifierOrKeyword(token()), diagnosticMessage);
+		}
+		
+		function parseOptionalBlockIdentifier(diagnosticMessage?: DiagnosticMessage): Identifier|undefined {
+            return tokenIsIdentifierOrKeyword(token())? createIdentifier(true, diagnosticMessage): undefined;
         }
 
         function isLiteralPropertyName(): boolean {
@@ -1508,7 +1601,7 @@ namespace ts {
                 case ParsingContext.ArrayBindingElements:
                     return token() === SyntaxKind.CommaToken || token() === SyntaxKind.DotDotDotToken || isIdentifierOrPattern();
                 case ParsingContext.TypeParameters:
-                    return isIdentifier();
+                    return isIdentifier() || token() === SyntaxKind.DotToken;
                 case ParsingContext.ArrayLiteralMembers:
                     if (token() === SyntaxKind.CommaToken) {
                         return true;
@@ -1614,7 +1707,9 @@ namespace ts {
                     return isVariableDeclaratorListTerminator();
                 case ParsingContext.TypeParameters:
                     // Tokens other than '>' are here for better error recovery
-                    return token() === SyntaxKind.GreaterThanToken || token() === SyntaxKind.OpenParenToken || token() === SyntaxKind.OpenBraceToken || token() === SyntaxKind.ExtendsKeyword || token() === SyntaxKind.ImplementsKeyword;
+					return token() === SyntaxKind.GreaterThanToken || token() === SyntaxKind.OpenParenToken 
+						|| token() === SyntaxKind.OpenBraceToken || token() === SyntaxKind.ExtendsKeyword 
+						|| token() === SyntaxKind.ImplementsKeyword;
                 case ParsingContext.ArgumentExpressions:
                     // Tokens other than ')' are here for better error recovery
                     return token() === SyntaxKind.CloseParenToken || token() === SyntaxKind.SemicolonToken;
@@ -2264,7 +2359,17 @@ namespace ts {
             return node;
         }
 
-        // TYPES
+		// TYPES
+		
+		function parseLifeTimeTypeReference(): TypeReferenceNode {
+            const node = <TypeReferenceNode>createNode(SyntaxKind.TypeReference);
+			const id = parseIdentifier();
+			if(id.escapedText != null){
+				id.escapedText = "." + id.escapedText as __String;
+			}
+			node.typeName = id;
+            return finishNode(node);
+        }
 
         function parseTypeReference(): TypeReferenceNode {
             const node = <TypeReferenceNode>createNode(SyntaxKind.TypeReference);
@@ -2402,6 +2507,9 @@ namespace ts {
         }
 
         function parseTypeParameter(): TypeParameterDeclaration {
+			if(token() === SyntaxKind.DotToken){
+				return parseLifeTimeTypeDeclaration();
+			}
             const node = <TypeParameterDeclaration>createNode(SyntaxKind.TypeParameter);
             node.name = parseIdentifier();
             if (parseOptional(SyntaxKind.ExtendsKeyword)) {
@@ -2521,7 +2629,7 @@ namespace ts {
                 return true;
             }
             return false;
-        }
+		}
 
         // Returns true on success.
         function parseParameterList(signature: SignatureDeclaration, flags: SignatureFlags): boolean {
@@ -2936,7 +3044,20 @@ namespace ts {
                 case SyntaxKind.OpenBracketToken:
                     return parseTupleType();
                 case SyntaxKind.OpenParenToken:
-                    return parseParenthesizedType();
+					return parseParenthesizedType();
+				case SyntaxKind.ConstKeyword:
+					/*nextToken();
+					const node = parseType();
+					return {
+						constant: true,
+						__proto__: finishNode(node)
+					} as any;*/
+					const node = createNode(SyntaxKind.ConstType) as ConstTypeNode;
+					nextToken();
+            		node.type = parseType();
+					return finishNode(node);
+				case SyntaxKind.DotToken:
+					return parseLifeTimeType();
                 case SyntaxKind.ImportKeyword:
                     return parseImportType();
                 default:
@@ -2975,7 +3096,9 @@ namespace ts {
                 case SyntaxKind.ExclamationToken:
                 case SyntaxKind.DotDotDotToken:
                 case SyntaxKind.InferKeyword:
-                case SyntaxKind.ImportKeyword:
+				case SyntaxKind.ImportKeyword:
+				case SyntaxKind.ConstKeyword:
+				case SyntaxKind.DotToken:
                     return true;
                 case SyntaxKind.FunctionKeyword:
                     return !inStartOfParameter;
@@ -3039,6 +3162,14 @@ namespace ts {
             return finishNode(postfix);
         }
 
+		/*function parseConstType(operator: SyntaxKind.KeyOfKeyword | SyntaxKind.UniqueKeyword) {
+            const node = <TypeOperatorNode>createNode(SyntaxKind.TypeOperator);
+            parseExpected(operator);
+            node.operator = operator;
+            node.type = parseTypeOperatorOrHigher();
+            return finishNode(node);
+		}*/
+
         function parseTypeOperator(operator: SyntaxKind.KeyOfKeyword | SyntaxKind.UniqueKeyword) {
             const node = <TypeOperatorNode>createNode(SyntaxKind.TypeOperator);
             parseExpected(operator);
@@ -3054,7 +3185,40 @@ namespace ts {
             typeParameter.name = parseIdentifier();
             node.typeParameter = finishNode(typeParameter);
             return finishNode(node);
-        }
+		}
+
+		// function parseLifeTimeType(): LifeTimeTypeNode{
+		// 	const node = <LifeTimeTypeNode>createNode(SyntaxKind.LifeTimeType);
+        //     parseExpected(SyntaxKind.DotToken);
+		// 	node.name = parseIdentifier();
+		// 	if(node.name.escapedText != null){
+		// 		node.name.escapedText = "." + node.name.escapedText as __String;
+		// 	}
+        //     return finishNode(node);
+		// }
+
+		function parseLifeTimeType(): LifeTimeTypeNode|TypeReferenceNode{
+			const node = <LifeTimeTypeNode>createNode(SyntaxKind.LifeTimeType);
+            parseExpected(SyntaxKind.DotToken);
+			node.ref = parseLifeTimeTypeReference();
+			if(!isStartOfType()){
+				// failed to parse type, standalone lifetime
+				return node.ref;
+			}
+			node.type = parseType();
+            return finishNode(node);
+		}
+		
+		function parseLifeTimeTypeDeclaration(): TypeParameterDeclaration{
+			const node = <TypeParameterDeclaration>createNode(SyntaxKind.TypeParameter);
+			node.isLifeTimeParam = true;
+			parseExpected(SyntaxKind.DotToken);
+			node.name = parseIdentifier();
+			if(node.name.escapedText != null){
+				node.name.escapedText = "." + node.name.escapedText as __String;
+			}
+            return finishNode(node);
+		}
 
         function parseTypeOperatorOrHigher(): TypeNode {
             const operator = token();
@@ -3063,7 +3227,7 @@ namespace ts {
                 case SyntaxKind.UniqueKeyword:
                     return parseTypeOperator(operator);
                 case SyntaxKind.InferKeyword:
-                    return parseInferType();
+					return parseInferType();
             }
             return parsePostfixTypeOrHigher();
         }
@@ -3466,7 +3630,7 @@ namespace ts {
             // have an opening brace, just in case we're in an error state.
             const lastToken = token();
             arrowFunction.equalsGreaterThanToken = parseExpectedToken(SyntaxKind.EqualsGreaterThanToken);
-            arrowFunction.body = (lastToken === SyntaxKind.EqualsGreaterThanToken || lastToken === SyntaxKind.OpenBraceToken)
+            arrowFunction.body = (lastToken === SyntaxKind.EqualsGreaterThanToken || lastToken === SyntaxKind.OpenBraceToken || lastToken === SyntaxKind.OpenBracketToken)
                 ? parseArrowFunctionExpressionBody(isAsync)
                 : parseIdentifier();
 
@@ -3685,7 +3849,7 @@ namespace ts {
         }
 
         function parseArrowFunctionExpressionBody(isAsync: boolean): Block | Expression {
-            if (token() === SyntaxKind.OpenBraceToken) {
+            if (token() === SyntaxKind.OpenBraceToken || isStartOfLifeTimeAnnotatedBlock()) {
                 return parseFunctionBlock(isAsync ? SignatureFlags.Await : SignatureFlags.None);
             }
 
@@ -4827,11 +4991,27 @@ namespace ts {
                 node.arguments = parseArgumentList();
             }
             return finishNode(node);
-        }
+		}
+		
+		function parseLifeTimeAnnotation(diagnosticMessage?: DiagnosticMessage): LifeTimeDeclaration|undefined{
+			if(token() !== SyntaxKind.OpenBracketToken)return undefined;
+			const node = <LifeTimeDeclaration>createNode(SyntaxKind.LifeTimeDeclaration);
+			if(parseExpected(SyntaxKind.OpenBracketToken)){
+				node.name = parseIdentifier(diagnosticMessage);
+				if(node.name.escapedText != null){
+					node.name.escapedText = "." + node.name.escapedText as __String;
+				}
+				parseExpected(SyntaxKind.CloseBracketToken);
+			}else{
+				node.name = createMissingNode(SyntaxKind.Identifier, true, diagnosticMessage);
+			}
+			return finishNode(node);
+		}
 
         // STATEMENTS
         function parseBlock(ignoreMissingOpenBrace: boolean, diagnosticMessage?: DiagnosticMessage): Block {
-            const node = <Block>createNode(SyntaxKind.Block);
+			const node = <Block>createNode(SyntaxKind.Block);
+			if(!ignoreMissingOpenBrace)node.lifeTime = parseLifeTimeAnnotation(diagnosticMessage);
             if (parseExpected(SyntaxKind.OpenBraceToken, diagnosticMessage) || ignoreMissingOpenBrace) {
                 if (scanner.hasPrecedingLineBreak()) {
                     node.multiLine = true;
@@ -4844,6 +5024,44 @@ namespace ts {
                 node.statements = createMissingList<Statement>();
             }
             return finishNode(node);
+		}
+
+		function parseMacroBlock(diagnosticMessage?: DiagnosticMessage): Statement {
+			const savedContextFlags = contextFlags & NodeFlags.ContextFlags;
+			setContextFlag(false, savedContextFlags);
+			const node = <MacroBlock>createNode(SyntaxKind.MacroBlock);
+			setCompilerContext(true);
+			nextToken();
+			node.name = parseOptionalBlockIdentifier();
+			node.block = parseBlock(false, diagnosticMessage);
+			setCompilerContext(false);
+			setContextFlag(true, savedContextFlags);
+			macroBlocks.push(finishNode(node));
+			return node;
+			// return empty statement
+			/*const subs = new NodeConstructor(SyntaxKind.EmptyStatement, node.pos, node.end) as EmptyStatement;
+			subs.compilerBlock = node;
+			node.placeholder = subs;
+            return finishNode(subs);*/
+        }
+		
+		function parseStaticBlock(diagnosticMessage?: DiagnosticMessage): Statement {
+			const savedContextFlags = contextFlags & NodeFlags.ContextFlags;
+			setContextFlag(false, savedContextFlags);
+			const node = <StaticBlock>createNode(SyntaxKind.StaticBlock);
+			setCompilerContext(true);
+			nextToken();
+			node.name = parseOptionalBlockIdentifier();
+			node.block = parseBlock(false, diagnosticMessage);
+			setCompilerContext(false);
+			setContextFlag(true, savedContextFlags);
+			staticBlocks.push(finishNode(node));
+			return node;
+			// return empty statement
+			/*const subs = new NodeConstructor(SyntaxKind.EmptyStatement, node.pos, node.end) as EmptyStatement;
+			subs.compilerBlock = node;
+			node.placeholder = subs;
+            return finishNode(subs);*/
         }
 
         function parseFunctionBlock(flags: SignatureFlags, diagnosticMessage?: DiagnosticMessage): Block {
@@ -5177,7 +5395,8 @@ namespace ts {
                     case SyntaxKind.PrivateKeyword:
                     case SyntaxKind.ProtectedKeyword:
                     case SyntaxKind.PublicKeyword:
-                    case SyntaxKind.ReadonlyKeyword:
+					case SyntaxKind.ReadonlyKeyword:
+					case SyntaxKind.InlineKeyword:
                         nextToken();
                         // ASI takes effect for this modifier.
                         if (scanner.hasPrecedingLineBreak()) {
@@ -5213,7 +5432,15 @@ namespace ts {
 
         function isStartOfDeclaration(): boolean {
             return lookAhead(isDeclaration);
-        }
+		}
+		
+		function isStartOfLifeTimeAnnotatedBlock():boolean{
+			return token() === SyntaxKind.OpenBracketToken &&
+				lookAhead(()=>
+					nextTokenIsIdentifier() && 
+					nextToken() === SyntaxKind.CloseBracketToken && 
+					nextToken() === SyntaxKind.OpenBraceToken);
+		}
 
         function isStartOfStatement(): boolean {
             switch (token()) {
@@ -5240,7 +5467,9 @@ namespace ts {
                 // 'catch' and 'finally' do not actually indicate that the code is part of a statement,
                 // however, we say they are here so that we may gracefully parse them and error later.
                 case SyntaxKind.CatchKeyword:
-                case SyntaxKind.FinallyKeyword:
+				case SyntaxKind.FinallyKeyword:
+				case SyntaxKind.CaretToken:
+				case SyntaxKind.HashToken:
                     return true;
 
                 case SyntaxKind.ImportKeyword:
@@ -5256,7 +5485,7 @@ namespace ts {
                 case SyntaxKind.ModuleKeyword:
                 case SyntaxKind.NamespaceKeyword:
                 case SyntaxKind.TypeKeyword:
-                case SyntaxKind.GlobalKeyword:
+				case SyntaxKind.GlobalKeyword:
                     // When these don't start a declaration, they're an identifier in an expression statement
                     return true;
 
@@ -5264,7 +5493,8 @@ namespace ts {
                 case SyntaxKind.PrivateKeyword:
                 case SyntaxKind.ProtectedKeyword:
                 case SyntaxKind.StaticKeyword:
-                case SyntaxKind.ReadonlyKeyword:
+				case SyntaxKind.ReadonlyKeyword:
+				case SyntaxKind.InlineKeyword:
                     // When these don't start a declaration, they may be the start of a class member if an identifier
                     // immediately follows. Otherwise they're an identifier in an expression statement.
                     return isStartOfDeclaration() || !lookAhead(nextTokenIsIdentifierOrKeywordOnSameLine);
@@ -5286,7 +5516,14 @@ namespace ts {
         }
 
         function parseStatement(): Statement {
+			if(isStartOfLifeTimeAnnotatedBlock()){
+				return parseBlock(/*ignoreMissingOpenBrace*/ false);
+			}
             switch (token()) {
+				case SyntaxKind.HashToken:
+					return parseMacroBlock();
+				case SyntaxKind.CaretToken:
+					return parseStaticBlock();
                 case SyntaxKind.SemicolonToken:
                     return parseEmptyStatement();
                 case SyntaxKind.OpenBraceToken:
@@ -5297,7 +5534,7 @@ namespace ts {
                     if (isLetDeclaration()) {
                         return parseVariableStatement(<VariableStatement>createNodeWithJSDoc(SyntaxKind.VariableDeclaration));
                     }
-                    break;
+					break;
                 case SyntaxKind.FunctionKeyword:
                     return parseFunctionDeclaration(<FunctionDeclaration>createNodeWithJSDoc(SyntaxKind.FunctionDeclaration));
                 case SyntaxKind.ClassKeyword:
@@ -5337,7 +5574,8 @@ namespace ts {
                 case SyntaxKind.ModuleKeyword:
                 case SyntaxKind.NamespaceKeyword:
                 case SyntaxKind.DeclareKeyword:
-                case SyntaxKind.ConstKeyword:
+				case SyntaxKind.ConstKeyword:
+				case SyntaxKind.InlineKeyword:
                 case SyntaxKind.EnumKeyword:
                 case SyntaxKind.ExportKeyword:
                 case SyntaxKind.ImportKeyword:
@@ -5428,7 +5666,7 @@ namespace ts {
         }
 
         function parseFunctionBlockOrSemicolon(flags: SignatureFlags, diagnosticMessage?: DiagnosticMessage): Block | undefined {
-            if (token() !== SyntaxKind.OpenBraceToken && canParseSemicolon()) {
+            if (token() !== SyntaxKind.OpenBraceToken && token() !== SyntaxKind.OpenBracketToken && canParseSemicolon()) {
                 parseSemicolon();
                 return;
             }
@@ -6260,6 +6498,7 @@ namespace ts {
         }
 
         const enum ParsingContext {
+			CompilerBlock,             // Block in a compilerblock
             SourceElements,            // Elements in source file
             BlockStatements,           // Statements in block
             SwitchClauses,             // Clauses in switch statement

@@ -596,6 +596,17 @@ namespace ts {
                 if (isKeyword(node.kind)) return writeTokenNode(node, writeKeyword);
 
                 switch (node.kind) {
+					case SyntaxKind.ConstType:
+						writeKeyword("const");
+						writeSpace();
+						return emit((<ConstTypeNode>node).type);
+					case SyntaxKind.LifeTimeType:
+						emitTypeReference((<LifeTimeTypeNode>node).ref);
+						writeSpace();
+						emit((<LifeTimeTypeNode>node).type);
+						return;
+					case SyntaxKind.LifeTimeDeclaration:
+						return emit((<LifeTimeDeclaration>node).name);
                     // Pseudo-literals
                     case SyntaxKind.TemplateHead:
                     case SyntaxKind.TemplateMiddle:
@@ -3290,6 +3301,7 @@ namespace ts {
         }
 
         function getTextOfNode(node: Node, includeTrivia?: boolean): string {
+			if(isIdentifier(node) && idText(<Identifier>node)[0] === '.')return idText(<Identifier>node);
             if (isGeneratedIdentifier(node)) {
                 return generateName(node);
             }

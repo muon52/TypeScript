@@ -104,7 +104,10 @@ namespace ts {
 
     export function bindSourceFile(file: SourceFile, options: CompilerOptions) {
         performance.mark("beforeBind");
-        binder(file, options);
+		binder(file, options);
+		if(file.compileTimeScript){
+			binder(file.compileTimeScript, options);
+		}
         performance.mark("afterBind");
         performance.measure("Bind", "beforeBind", "afterBind");
     }
@@ -716,8 +719,9 @@ namespace ts {
                 }
                 case SyntaxKind.Block:
                 case SyntaxKind.ModuleBlock:
-                    bindEachFunctionsFirst((node as Block).statements);
-                    break;
+					bindEachFunctionsFirst((node as Block).statements);
+					bind((<Block>node).lifeTime);
+					break;
                 default:
                     bindEachChild(node);
                     break;
@@ -1411,6 +1415,8 @@ namespace ts {
 
         function getContainerFlags(node: Node): ContainerFlags {
             switch (node.kind) {
+				/*case SyntaxKind.CompilerBlock:
+					return ContainerFlags.IsContainer | ContainerFlags.IsControlFlowContainer;*/
                 case SyntaxKind.ClassExpression:
                 case SyntaxKind.ClassDeclaration:
                 case SyntaxKind.EnumDeclaration:
@@ -2053,6 +2059,8 @@ namespace ts {
 
         function bindWorker(node: Node) {
             switch (node.kind) {
+				/*case SyntaxKind.CompilerBlock:
+					return bindCompilerBlock(<CompilerBlock>node);*/
                 /* Strict mode checks */
                 case SyntaxKind.Identifier:
                     // for typedef type names with namespaces, bind the new jsdoc type symbol here
@@ -2140,7 +2148,11 @@ namespace ts {
                 case SyntaxKind.Parameter:
                     return bindParameter(<ParameterDeclaration>node);
                 case SyntaxKind.VariableDeclaration:
-                    return bindVariableDeclarationOrBindingElement(<VariableDeclaration>node);
+					return bindVariableDeclarationOrBindingElement(<VariableDeclaration>node);
+				case SyntaxKind.LifeTimeDeclaration:
+					return bindLifeTimeDeclaration(<LifeTimeDeclaration>node);
+				// case SyntaxKind.LifeTimeType:
+                //     return bindLifeTimeTypeNode(<LifeTimeTypeNode>node);
                 case SyntaxKind.BindingElement:
                     node.flowNode = currentFlow;
                     return bindVariableDeclarationOrBindingElement(<BindingElement>node);
@@ -2257,7 +2269,36 @@ namespace ts {
                 case SyntaxKind.JSDocCallbackTag:
                     return (delayedTypeAliases || (delayedTypeAliases = [])).push(node as JSDocTypedefTag | JSDocCallbackTag);
             }
-        }
+		}
+		
+		/*function bindCompilerBlock(node : CompilerBlock){
+			let file = getSourceFileOfNode(node);
+			let symbol: Symbol | undefined;
+			let name = node.name && getTextOfIdentifierOrLiteral(node.name);
+			let errMsg: DiagnosticMessage|undefined;
+            if (name == null) {
+                symbol = createSymbol(SymbolFlags.CompilerBlock, InternalSymbolName.Missing);
+            }else{
+				let cb = file.compilerBlocks!.find(cb=>{
+					return cb.name != null &&
+						getTextOfIdentifierOrLiteral(cb.name) === name && 
+						cb.symbol != null;})
+				if(cb != null){
+						symbol = cb.symbol;
+						// already declared compilerblock
+						errMsg = Diagnostics.This_compiler_block_name_is_already_in_use;
+				}else{
+					symbol = createSymbol(SymbolFlags.CompilerBlock, name as __String);
+				}
+			}
+			addDeclarationToSymbol(symbol, node, SymbolFlags.CompilerBlock);
+			if(errMsg != null){
+				const addError = (decl: Declaration): void => {
+					file.bindDiagnostics.push(createDiagnosticForNode(getNameOfDeclaration(decl) || decl, errMsg!));
+				};
+				forEach(symbol.declarations, addError);
+			}
+		}*/
 
         function bindPropertyWorker(node: PropertyDeclaration | PropertySignature) {
             return bindPropertyOrMethodOrAccessor(node, SymbolFlags.Property | (node.questionToken ? SymbolFlags.Optional : SymbolFlags.None), SymbolFlags.PropertyExcludes);
@@ -2661,7 +2702,11 @@ namespace ts {
             return isEnumConst(node)
                 ? bindBlockScopedDeclaration(node, SymbolFlags.ConstEnum, SymbolFlags.ConstEnumExcludes)
                 : bindBlockScopedDeclaration(node, SymbolFlags.RegularEnum, SymbolFlags.RegularEnumExcludes);
-        }
+		}
+		
+		function bindLifeTimeDeclaration(node: LifeTimeDeclaration){
+			bindBlockScopedDeclaration(node, SymbolFlags.LifeTime, SymbolFlags.LifeTimeExcludes);
+		}
 
         function bindVariableDeclarationOrBindingElement(node: VariableDeclaration | BindingElement) {
             if (inStrictMode) {
@@ -2769,16 +2814,18 @@ namespace ts {
         }
 
         function bindTypeParameter(node: TypeParameterDeclaration) {
+			let flags = SymbolFlags.TypeParameter;
+			if(node.isLifeTimeParam)flags |= SymbolFlags.LifeTime;
             if (isJSDocTemplateTag(node.parent)) {
                 const container = find((node.parent.parent as JSDoc).tags!, isJSDocTypeAlias) || getHostSignatureFromJSDoc(node.parent); // TODO: GH#18217
                 if (container) {
                     if (!container.locals) {
                         container.locals = createSymbolTable();
                     }
-                    declareSymbol(container.locals, /*parent*/ undefined, node, SymbolFlags.TypeParameter, SymbolFlags.TypeParameterExcludes);
+                    declareSymbol(container.locals, /*parent*/ undefined, node, flags, SymbolFlags.TypeParameterExcludes);
                 }
                 else {
-                    declareSymbolAndAddToSymbolTable(node, SymbolFlags.TypeParameter, SymbolFlags.TypeParameterExcludes);
+                    declareSymbolAndAddToSymbolTable(node, flags, SymbolFlags.TypeParameterExcludes);
                 }
             }
             else if (node.parent.kind === SyntaxKind.InferType) {
@@ -2787,14 +2834,14 @@ namespace ts {
                     if (!container.locals) {
                         container.locals = createSymbolTable();
                     }
-                    declareSymbol(container.locals, /*parent*/ undefined, node, SymbolFlags.TypeParameter, SymbolFlags.TypeParameterExcludes);
+                    declareSymbol(container.locals, /*parent*/ undefined, node, flags, SymbolFlags.TypeParameterExcludes);
                 }
                 else {
-                    bindAnonymousDeclaration(node, SymbolFlags.TypeParameter, getDeclarationName(node)!); // TODO: GH#18217
+                    bindAnonymousDeclaration(node, flags, getDeclarationName(node)!); // TODO: GH#18217
                 }
             }
             else {
-                declareSymbolAndAddToSymbolTable(node, SymbolFlags.TypeParameter, SymbolFlags.TypeParameterExcludes);
+                declareSymbolAndAddToSymbolTable(node, flags, SymbolFlags.TypeParameterExcludes);
             }
         }
 

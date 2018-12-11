@@ -58,7 +58,8 @@ namespace ts {
         | SyntaxKind.ImplementsKeyword
         | SyntaxKind.ImportKeyword
         | SyntaxKind.InKeyword
-        | SyntaxKind.InferKeyword
+		| SyntaxKind.InferKeyword
+		| SyntaxKind.InlineKeyword
         | SyntaxKind.InstanceOfKeyword
         | SyntaxKind.InterfaceKeyword
         | SyntaxKind.IsKeyword
@@ -101,7 +102,7 @@ namespace ts {
         | SyntaxKind.YieldKeyword
         | SyntaxKind.AsyncKeyword
         | SyntaxKind.AwaitKeyword
-        | SyntaxKind.OfKeyword;
+		| SyntaxKind.OfKeyword;
 
     export type JsxTokenSyntaxKind =
         | SyntaxKind.LessThanSlashToken
@@ -110,7 +111,7 @@ namespace ts {
         | SyntaxKind.JsxText
         | SyntaxKind.JsxTextAllWhiteSpaces
         | SyntaxKind.OpenBraceToken
-        | SyntaxKind.LessThanToken;
+		| SyntaxKind.LessThanToken;
 
     // token > SyntaxKind.Identifier => token is a keyword
     // Also, If you add a new SyntaxKind be sure to keep the `Markers` section at the bottom in sync
@@ -171,7 +172,8 @@ namespace ts {
         GreaterThanGreaterThanGreaterThanToken,
         AmpersandToken,
         BarToken,
-        CaretToken,
+		CaretToken,
+		HashToken,
         ExclamationToken,
         TildeToken,
         AmpersandAmpersandToken,
@@ -252,7 +254,8 @@ namespace ts {
         ConstructorKeyword,
         DeclareKeyword,
         GetKeyword,
-        InferKeyword,
+		InferKeyword,
+		InlineKeyword,
         IsKeyword,
         KeyOfKeyword,
         ModuleKeyword,
@@ -271,7 +274,7 @@ namespace ts {
         UnknownKeyword,
         FromKeyword,
         GlobalKeyword,
-        OfKeyword, // LastKeyword and LastToken and LastContextualKeyword
+		OfKeyword, // LastKeyword and LastToken and LastContextualKeyword
 
         // Parse tree nodes
 
@@ -281,7 +284,8 @@ namespace ts {
         // Signature elements
         TypeParameter,
         Parameter,
-        Decorator,
+		Decorator,
+		LifeTimeDeclaration,
         // TypeMember
         PropertySignature,
         PropertyDeclaration,
@@ -293,7 +297,7 @@ namespace ts {
         CallSignature,
         ConstructSignature,
         IndexSignature,
-        // Type
+		// Type
         TypePredicate,
         TypeReference,
         FunctionType,
@@ -308,13 +312,15 @@ namespace ts {
         IntersectionType,
         ConditionalType,
         InferType,
+		ConstType,
         ParenthesizedType,
         ThisType,
         TypeOperator,
         IndexedAccessType,
         MappedType,
         LiteralType,
-        ImportType,
+		ImportType,
+		LifeTimeType,
         // Binding patterns
         ObjectBindingPattern,
         ArrayBindingPattern,
@@ -354,7 +360,9 @@ namespace ts {
         TemplateSpan,
         SemicolonClassElement,
         // Element
-        Block,
+		Block,
+		MacroBlock,
+		StaticBlock,
         VariableStatement,
         EmptyStatement,
         ExpressionStatement,
@@ -502,7 +510,7 @@ namespace ts {
         FirstJSDocTagNode = JSDocTag,
         LastJSDocTagNode = JSDocPropertyTag,
         /* @internal */ FirstContextualKeyword = AbstractKeyword,
-        /* @internal */ LastContextualKeyword = OfKeyword,
+		/* @internal */ LastContextualKeyword = OfKeyword,
     }
 
     export const enum NodeFlags {
@@ -542,7 +550,8 @@ namespace ts {
         JSDoc                                         = 1 << 21, // If node was parsed inside jsdoc
         /* @internal */ Ambient                       = 1 << 22, // If node was inside an ambient context -- a declaration file, or inside something with the `declare` modifier.
         /* @internal */ InWithStatement               = 1 << 23, // If any ancestor of node was the `statement` of a WithStatement (not the `expression`)
-        JsonFile                                      = 1 << 24, // If node was parsed in a Json
+		JsonFile                                      = 1 << 24, // If node was parsed in a Json
+		CompilerContext								  = 1 << 25, // We are in a compiler block
 
         BlockScoped = Let | Const,
 
@@ -550,7 +559,7 @@ namespace ts {
         ReachabilityAndEmitFlags = ReachabilityCheckFlags | HasAsyncFunctions,
 
         // Parsing context flags
-        ContextFlags = DisallowInContext | YieldContext | DecoratorContext | AwaitContext | JavaScriptFile | InWithStatement | Ambient,
+        ContextFlags = DisallowInContext | YieldContext | DecoratorContext | AwaitContext | JavaScriptFile | InWithStatement | Ambient | CompilerContext,
 
         // Exclude these flags when parsing a Type
         TypeExcludesFlags = YieldContext | AwaitContext,
@@ -574,16 +583,17 @@ namespace ts {
         Async =              1 << 8,  // Property/Method/Function
         Default =            1 << 9,  // Function/Class (export default declaration)
         Const =              1 << 11, // Const enum
-        HasComputedFlags =   1 << 29, // Modifier flags have been computed
+		Inline =			 1 << 12, // Inline function
+		HasComputedFlags =   1 << 29, // Modifier flags have been computed
 
         AccessibilityModifier = Public | Private | Protected,
         // Accessibility modifiers and 'readonly' can be attached to a parameter in a constructor to make it a property.
         ParameterPropertyModifier = AccessibilityModifier | Readonly,
         NonPublicAccessibilityModifier = Private | Protected,
 
-        TypeScriptModifier = Ambient | Public | Private | Protected | Readonly | Abstract | Const,
+        TypeScriptModifier = Ambient | Public | Private | Protected | Readonly | Abstract | Const | Inline,
         ExportDefault = Export | Default,
-        All = Export | Ambient | Public | Private | Protected | Static | Readonly | Abstract | Async | Default | Const
+        All = Export | Ambient | Public | Private | Protected | Static | Readonly | Abstract | Async | Default | Const | Inline
     }
 
     export const enum JsxFlags {
@@ -669,7 +679,8 @@ namespace ts {
         | PropertySignature
         | PropertyDeclaration
         | TypePredicateNode
-        | ParenthesizedTypeNode
+		| ParenthesizedTypeNode
+		| ConstTypeNode
         | TypeOperatorNode
         | MappedTypeNode
         | AssertionExpression
@@ -842,7 +853,8 @@ namespace ts {
         default?: TypeNode;
 
         // For error recovery purposes.
-        expression?: Expression;
+		expression?: Expression;
+		isLifeTimeParam?: boolean;
     }
 
     export interface SignatureDeclarationBase extends NamedDeclaration, JSDocContainer {
@@ -1038,7 +1050,7 @@ namespace ts {
     export interface FunctionDeclaration extends FunctionLikeDeclarationBase, DeclarationStatement {
         kind: SyntaxKind.FunctionDeclaration;
         name?: Identifier;
-        body?: FunctionBody;
+		body?: FunctionBody;
     }
 
     export interface MethodSignature extends SignatureDeclarationBase, TypeElement {
@@ -1102,7 +1114,7 @@ namespace ts {
     }
 
     export interface TypeNode extends Node {
-        _typeNodeBrand: any;
+		_typeNodeBrand: any;
     }
 
     export interface KeywordTypeNode extends TypeNode {
@@ -1157,8 +1169,8 @@ namespace ts {
 
     export interface TypeReferenceNode extends NodeWithTypeArguments {
         kind: SyntaxKind.TypeReference;
-        typeName: EntityName;
-    }
+		typeName: EntityName;
+	}
 
     export interface TypePredicateNode extends TypeNode {
         kind: SyntaxKind.TypePredicate;
@@ -1186,7 +1198,12 @@ namespace ts {
     export interface TupleTypeNode extends TypeNode {
         kind: SyntaxKind.TupleType;
         elementTypes: NodeArray<TypeNode>;
-    }
+	}
+	
+	export interface ConstTypeNode extends TypeNode{
+		kind: SyntaxKind.ConstType;
+		type: TypeNode;
+	}
 
     export interface OptionalTypeNode extends TypeNode {
         kind: SyntaxKind.OptionalType;
@@ -1221,7 +1238,13 @@ namespace ts {
     export interface InferTypeNode extends TypeNode {
         kind: SyntaxKind.InferType;
         typeParameter: TypeParameterDeclaration;
-    }
+	}
+	
+	export interface LifeTimeTypeNode extends TypeNode{
+		kind: SyntaxKind.LifeTimeType;
+		ref: TypeReferenceNode;
+		type: TypeNode;
+	}
 
     export interface ParenthesizedTypeNode extends TypeNode {
         kind: SyntaxKind.ParenthesizedType;
@@ -1962,7 +1985,8 @@ namespace ts {
     }
 
     export interface EmptyStatement extends Statement {
-        kind: SyntaxKind.EmptyStatement;
+		kind: SyntaxKind.EmptyStatement;
+		/*compilerBlock?: CompilerBlock;*/
     }
 
     export interface DebuggerStatement extends Statement {
@@ -1976,10 +2000,16 @@ namespace ts {
 
     export type BlockLike = SourceFile | Block | ModuleBlock | CaseOrDefaultClause;
 
+	export interface LifeTimeDeclaration extends Declaration{
+		kind: SyntaxKind.LifeTimeDeclaration;
+		name: Identifier;
+	}
+
     export interface Block extends Statement {
         kind: SyntaxKind.Block;
         statements: NodeArray<Statement>;
-        /*@internal*/ multiLine?: boolean;
+		/*@internal*/ multiLine?: boolean;
+		lifeTime?: LifeTimeDeclaration;
     }
 
     export interface VariableStatement extends Statement, JSDocContainer {
@@ -2050,7 +2080,21 @@ namespace ts {
     export interface ContinueStatement extends Statement {
         kind: SyntaxKind.ContinueStatement;
         label?: Identifier;
-    }
+	}
+
+	export interface MacroBlock extends DeclarationStatement {
+		kind: SyntaxKind.MacroBlock;
+		name?: Identifier;
+		block: Block;
+		result?: any;
+	}
+	
+	export interface StaticBlock extends DeclarationStatement {
+		kind: SyntaxKind.StaticBlock;
+		name?: Identifier;
+		block: Block;
+		result?: any;
+	}
 
     export type BreakOrContinueStatement = BreakStatement | ContinueStatement;
 
@@ -2687,7 +2731,11 @@ namespace ts {
         /* @internal */ identifiers: Map<string>; // Map from a string to an interned string
         /* @internal */ nodeCount: number;
         /* @internal */ identifierCount: number;
-        /* @internal */ symbolCount: number;
+		/* @internal */ symbolCount: number;
+		
+		/* @internal */ compileTimeScript: SourceFile|undefined;
+		/* @internal */ macroBlocks: MacroBlock[];
+		/* @internal */ staticBlocks: StaticBlock[];
 
         // File-level diagnostics reported by the parser (includes diagnostics about /// references
         // as well as code diagnostics).
@@ -3528,7 +3576,9 @@ namespace ts {
         Optional                = 1 << 24,  // Optional property
         Transient               = 1 << 25,  // Transient symbol (created during type check)
         Assignment              = 1 << 26,  // Assignment treated as declaration (eg `this.prop = 1`)
-        ModuleExports           = 1 << 27,  // Symbol for CommonJS `module` of `module.exports`
+		ModuleExports           = 1 << 27,  // Symbol for CommonJS `module` of `module.exports`
+		CompilerBlock           = 1 << 28,  // Symbol for Compiler blocks
+		LifeTime				= 1 << 29,  // Symbol for life time variables
 
         /* @internal */
         All = FunctionScopedVariable | BlockScopedVariable | Property | EnumMember | Function | Class | Interface | ConstEnum | RegularEnum | ValueModule | NamespaceModule | TypeLiteral
@@ -3537,7 +3587,7 @@ namespace ts {
         Enum = RegularEnum | ConstEnum,
         Variable = FunctionScopedVariable | BlockScopedVariable,
         Value = Variable | Property | EnumMember | ObjectLiteral | Function | Class | Enum | ValueModule | Method | GetAccessor | SetAccessor | Assignment,
-        Type = Class | Interface | Enum | EnumMember | TypeLiteral | TypeParameter | TypeAlias | Assignment,
+        Type = Class | Interface | Enum | EnumMember | TypeLiteral | TypeParameter | TypeAlias | Assignment | LifeTime,
         Namespace = ValueModule | NamespaceModule | Enum,
         Module = ValueModule | NamespaceModule,
         Accessor = GetAccessor | SetAccessor,
@@ -3565,7 +3615,8 @@ namespace ts {
         SetAccessorExcludes = Value & ~GetAccessor,
         TypeParameterExcludes = Type & ~TypeParameter,
         TypeAliasExcludes = Type,
-        AliasExcludes = Alias,
+		AliasExcludes = Alias,
+		LifeTimeExcludes =  TypeParameterExcludes,
 
         ModuleMember = Variable | Function | Class | Interface | Enum | Module | TypeAlias | Alias,
 
@@ -3815,7 +3866,9 @@ namespace ts {
         /* @internal */
         ContainsObjectLiteral   = 1 << 28,  // Type is or contains object literal type
         /* @internal */
-        ContainsAnyFunctionType = 1 << 29,  // Type is or contains the anyFunctionType
+		ContainsAnyFunctionType = 1 << 29,  // Type is or contains the anyFunctionType
+		LifeTime				= 1 << 30,  // Type is a lifetime type
+
 
         /* @internal */
         AnyOrUnknown = Any | Unknown,
@@ -3877,6 +3930,8 @@ namespace ts {
 
     // Properties common to all types
     export interface Type {
+		constant?: boolean;
+		lifeTime?: Symbol;				 // The LifeTime of the data
         flags: TypeFlags;                // Flags
         /* @internal */ id: number;      // Unique ID
         /* @internal */ checker: TypeChecker;
@@ -3888,7 +3943,11 @@ namespace ts {
         wildcardInstantiation?: Type;    // Instantiation with type parameters mapped to wildcard type
         /* @internal */
         immediateBaseConstraint?: Type;  // Immediate base constraint cache
-    }
+	}
+	
+	// export interface LifeTimeType extends Type{
+	// 	symbol: Symbol;
+	// }
 
     /* @internal */
     // Intrinsic types (TypeFlags.Intrinsic)
@@ -4023,7 +4082,11 @@ namespace ts {
 
     export interface TupleTypeReference extends TypeReference {
         target: TupleType;
-    }
+	}
+
+	export interface ConstType extends Type{
+		type: Type; // base type
+	}
 
     export interface UnionOrIntersectionType extends Type {
         types: Type[];                    // Constituent types
@@ -4210,7 +4273,8 @@ namespace ts {
         typeParameters?: ReadonlyArray<TypeParameter>;   // Type parameters (undefined if non-generic)
         parameters: ReadonlyArray<Symbol>;               // Parameters
         /* @internal */
-        thisParameter?: Symbol;             // symbol of this-type parameter
+		thisParameter?: Symbol;             // symbol of this-type parameter
+		constant?: boolean;
         /* @internal */
         // See comment in `instantiateSignature` for why these are set lazily.
         resolvedReturnType?: Type;          // Lazily set by `getReturnTypeOfSignature`.

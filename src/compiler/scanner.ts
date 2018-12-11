@@ -91,7 +91,8 @@ namespace ts {
         implements: SyntaxKind.ImplementsKeyword,
         import: SyntaxKind.ImportKeyword,
         in: SyntaxKind.InKeyword,
-        infer: SyntaxKind.InferKeyword,
+		infer: SyntaxKind.InferKeyword,
+		inline: SyntaxKind.InlineKeyword,
         instanceof: SyntaxKind.InstanceOfKeyword,
         interface: SyntaxKind.InterfaceKeyword,
         is: SyntaxKind.IsKeyword,
@@ -134,7 +135,7 @@ namespace ts {
         yield: SyntaxKind.YieldKeyword,
         async: SyntaxKind.AsyncKeyword,
         await: SyntaxKind.AwaitKeyword,
-        of: SyntaxKind.OfKeyword,
+		of: SyntaxKind.OfKeyword,
     };
 
     const textToKeyword = createMapFromTemplate(textToKeywordObj);
@@ -174,7 +175,8 @@ namespace ts {
         ">>>": SyntaxKind.GreaterThanGreaterThanGreaterThanToken,
         "&": SyntaxKind.AmpersandToken,
         "|": SyntaxKind.BarToken,
-        "^": SyntaxKind.CaretToken,
+		"^": SyntaxKind.CaretToken,
+		"#": SyntaxKind.HashToken,
         "!": SyntaxKind.ExclamationToken,
         "~": SyntaxKind.TildeToken,
         "&&": SyntaxKind.AmpersandAmpersandToken,
@@ -1714,9 +1716,12 @@ namespace ts {
                     case CharacterCodes.caret:
                         if (text.charCodeAt(pos + 1) === CharacterCodes.equals) {
                             return pos += 2, token = SyntaxKind.CaretEqualsToken;
-                        }
+						}
                         pos++;
-                        return token = SyntaxKind.CaretToken;
+						return token = SyntaxKind.CaretToken;
+					case CharacterCodes.hash:
+                        pos++;
+                        return token = SyntaxKind.HashToken;
                     case CharacterCodes.openBrace:
                         pos++;
                         return token = SyntaxKind.OpenBraceToken;

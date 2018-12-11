@@ -3,7 +3,7 @@
     "author": "Microsoft Corp.",
     "homepage": "http://typescriptlang.org/",
     "version": "3.1.4",
-   "license": "Apache-2.0",
+    "license": "Apache-2.0",
     "description": "TypeScript is a language for application scale JavaScript development",
     "keywords": [
         "TypeScript",
@@ -48,7 +48,7 @@
         "@types/minimist": "latest",
         "@types/mkdirp": "latest",
         "@types/mocha": "latest",
-        "@types/node": "8.5.5",
+        "@types/node": "^8.10.36",
         "@types/q": "latest",
         "@types/run-sequence": "latest",
         "@types/source-map-support": "latest",

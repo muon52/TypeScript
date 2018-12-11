@@ -136,9 +136,17 @@ namespace ts.SymbolDisplay {
         let documentationFromAlias: SymbolDisplayPart[] | undefined;
         let tagsFromAlias: JSDocTagInfo[] | undefined;
 
+		if(symbol.flags & SymbolFlags.CompilerBlock){
+			return {displayParts: [displayPart("block", SymbolDisplayPartKind.keyword)], documentation: [], symbolKind: ScriptElementKind.unknown, tags: undefined};
+		}
+
+		if(symbol.flags & SymbolFlags.LifeTime){
+			return {displayParts: [displayPart("lifetime", SymbolDisplayPartKind.keyword)], documentation: [], symbolKind: ScriptElementKind.unknown, tags: undefined};
+		}
+
         if (location.kind === SyntaxKind.ThisKeyword && !isThisExpression) {
             return { displayParts: [keywordPart(SyntaxKind.ThisKeyword)], documentation: [], symbolKind: ScriptElementKind.primitiveType, tags: undefined };
-        }
+		}
 
         // Class at constructor site need to be shown as constructor apart from property,method, vars
         if (symbolKind !== ScriptElementKind.unknown || symbolFlags & SymbolFlags.Class || symbolFlags & SymbolFlags.Alias) {

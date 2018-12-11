@@ -315,7 +315,7 @@ namespace ts {
                 case SyntaxKind.ClassDeclaration:
                 case SyntaxKind.InterfaceDeclaration:
                 case SyntaxKind.EnumDeclaration:
-                case SyntaxKind.ModuleDeclaration:
+				case SyntaxKind.ModuleDeclaration:
                     return <Declaration>node;
             }
         }
@@ -692,17 +692,37 @@ namespace ts {
     function getTokenAtPositionWorker(sourceFile: SourceFile, position: number, allowPositionInLeadingTrivia: boolean, includePrecedingTokenAtEndPosition: ((n: Node) => boolean) | undefined, includeEndPosition: boolean): Node {
         let current: Node = sourceFile;
         outer: while (true) {
+			/*let compilerBlock = (<EmptyStatement>current).compilerBlock;
+			let name: undefined|Identifier;
+			let block: undefined|Block;
+			let outerName : undefined|Identifier;
+			let outerBlock : undefined|Block;
+			if(compilerBlock){
+				current = compilerBlock;
+				name = (<any>compilerBlock).name;
+				block =(<any>compilerBlock).block;
+				outerName = (<any>compilerBlock).outerName;
+				outerBlock =(<any>compilerBlock).outerBlock;
+				sourceFile = sourceFile.compileTimeScript!;
+			}*/
             // find the child that contains 'position'
             for (const child of current.getChildren(sourceFile)) {
                 const start = allowPositionInLeadingTrivia ? child.getFullStart() : child.getStart(sourceFile, /*includeJsDoc*/ true);
                 if (start > position) {
                     // If this child begins after position, then all subsequent children will as well.
                     break;
-                }
+				}
 
                 const end = child.getEnd();
                 if (position < end || (position === end && (child.kind === SyntaxKind.EndOfFileToken || includeEndPosition))) {
-                    current = child;
+					current = child;
+					/*if(current === name){
+						current = outerName!;
+						position += outerName!.pos - name.pos;
+					}else if(current === block){
+						current = outerBlock!;
+						position += outerBlock!.pos - block.pos;
+					}*/
                     continue outer;
                 }
                 else if (includePrecedingTokenAtEndPosition && end === position) {
