@@ -11424,7 +11424,7 @@ namespace ts {
 			// 	return types;
 			// }
 
-            /**
+			/**
              * Compare two types and return
              * * Ternary.True if they are related with no assumptions,
              * * Ternary.Maybe if they are related with assumptions of other relationships, or
@@ -11452,40 +11452,11 @@ namespace ts {
 					}
 				}
 
-				if (source.lifeTime){
-					if(!target.lifeTime){ // target is implicitly static
-						if (reportErrors) {
-                            reportRelationError(headMessage, source, target);
-                        }
-						return Ternary.False;
+				if (source.lifeTime && !isLifeTimeRelated(source.lifeTime, target.lifeTime)){ 
+					if (reportErrors) {
+						reportRelationError(headMessage, source, target);
 					}
-					if(source.lifeTime.flags & SymbolFlags.TypeParameter && target.lifeTime.flags & SymbolFlags.TypeParameter){
-						if(source.lifeTime !== target.lifeTime){
-							if (reportErrors) {
-								reportRelationError(headMessage, source, target);
-							}
-							return Ternary.False;
-						}
-					}else if(source.lifeTime.flags & SymbolFlags.TypeParameter || target.lifeTime.flags & SymbolFlags.TypeParameter){
-						if (reportErrors) {
-							reportRelationError(headMessage, source, target);
-						}
-						return Ternary.False;
-					}
-					let success: boolean = false;
-					let src: Node = source.lifeTime.declarations[0].parent; // the wrapping blocks
-					let dst: Node = target.lifeTime.declarations[0].parent;
-					do{
-						if(dst === src){
-							success = true;break;
-						}
-					}while(dst = dst.parent);
-					if(!success){
-						if (reportErrors) {
-							reportRelationError(headMessage, source, target);
-						}
-						return Ternary.False;
-					}
+					return Ternary.False;
 				}
 
                 if (source.flags & TypeFlags.Literal && source.flags & TypeFlags.FreshLiteral) {
@@ -14732,12 +14703,22 @@ namespace ts {
         function mapType(type: Type, mapper: (t: Type) => Type, noReductions?: boolean): Type;
         function mapType(type: Type, mapper: (t: Type) => Type | undefined, noReductions?: boolean): Type | undefined;
         function mapType(type: Type, mapper: (t: Type) => Type | undefined, noReductions?: boolean): Type | undefined {
+			if(type.constant){
+				let result = mapType(tidyAnnotations({constant: false, __proto__: type} as any), mapper, noReductions);
+				if(!result)return undefined;
+				return tidyAnnotations({constant: true, __proto__: result} as any);
+			}
+			if(type.lifeTime){
+				let result = mapType(tidyAnnotations({lifeTime: undefined, __proto__: type} as any), mapper, noReductions);
+				if(!result)return undefined;
+				return tidyAnnotations({lifeTime: type.lifeTime, __proto__: result} as any);
+			}
             if (type.flags & TypeFlags.Never) {
                 return type;
             }
             if (!(type.flags & TypeFlags.Union)) {
                 return mapper(type);
-            }
+			}
             const types = (<UnionType>type).types;
             let mappedType: Type | undefined;
             let mappedTypes: Type[] | undefined;
@@ -16594,7 +16575,28 @@ namespace ts {
                 }
             }
             return undefined;
-        }
+		}
+		
+		// function getContextualTypeForArrowFunction(node: ArrowFunction): Type|undefined{
+		// 	let captured : Symbol[] = [];
+		// 	if(node.body){
+		// 		let cb = (n: Node)=>getSymbolsDeclaredAbove(n, node, cb, captured);
+		// 		cb(node.body);
+		// 	}
+		// 	let lifeTime : Symbol|undefined = undefined;
+		// 	for(let symbol of captured){
+		// 		let type = getTypeOfSymbol(getMergedSymbol(symbol));
+		// 		if(!type.lifeTime)continue;
+		// 		if(!lifeTime || isLifeTimeRelated(lifeTime, type.lifeTime)){
+		// 			lifeTime = type.lifeTime;
+		// 		}
+		// 	}
+		// 	let type = getContextualTypeForReturnExpression(node);
+		// 	if(lifeTime && type){
+		// 		type = tidyAnnotations({lifeTime: lifeTime, __proto__: type}  as any);
+		// 	}
+		// 	return type;
+		// }
 
         function getContextualTypeForReturnExpression(node: Expression): Type | undefined {
             const func = getContainingFunction(node);
@@ -17014,12 +17016,13 @@ namespace ts {
                 case SyntaxKind.PropertySignature:
                 case SyntaxKind.BindingElement:
                     return getContextualTypeForInitializerExpression(node);
-                case SyntaxKind.ArrowFunction:
+				case SyntaxKind.ArrowFunction:
+					//return getContextualTypeForArrowFunction(<ArrowFunction>node);
                 case SyntaxKind.ReturnStatement:
                     return getContextualTypeForReturnExpression(node);
                 case SyntaxKind.YieldExpression:
                     return getContextualTypeForYieldOperand(<YieldExpression>parent);
-                    case SyntaxKind.CallExpression:
+                case SyntaxKind.CallExpression:
                 case SyntaxKind.NewExpression:
                     return getContextualTypeForArgument(<CallExpression | NewExpression>parent, node);
                 case SyntaxKind.TypeAssertionExpression:
@@ -21325,7 +21328,22 @@ namespace ts {
                 default:
                     return false;
             }
-        }
+		}
+		
+		function isLifeTimeRelated(src: Symbol, dst: Symbol|undefined): boolean{
+			if(!dst)return false; // target is implicitly static
+			if(src.flags & SymbolFlags.TypeParameter && dst.flags & SymbolFlags.TypeParameter)
+				return src === dst;
+			if(src.flags & SymbolFlags.TypeParameter || dst.flags & SymbolFlags.TypeParameter)
+				return false;
+			let srcDecl: Node = src.declarations[0].parent; // the wrapping blocks
+			let dstDecl: Node = dst.declarations[0].parent;
+			do{
+				if(dstDecl === srcDecl)return true;
+			}while(dstDecl = dstDecl.parent);
+			return false;
+			//return isNodeDescendantOf(dstDecl, srcDecl);
+		}
 
         /**
          * TypeScript Specification 1.0 (6.3) - July 2014
@@ -21381,10 +21399,48 @@ namespace ts {
                 }
                 error(getEffectiveReturnTypeNode(func) || func, Diagnostics.Not_all_code_paths_return_a_value);
             }
-        }
+		}
+		
+		// function getSymbolsDeclaredAbove(node: Node, limit: Node, cb: (n:Node)=>void,  symbols: Symbol[]){
+		// 	let symbol: Symbol | undefined;
+		// 	if(isIdentifier(node) && node.parent.kind != SyntaxKind.PropertyAccessExpression && (symbol = getResolvedSymbol(<Identifier>node)) && symbol.flags & SymbolFlags.Variable){
+		// 		if(symbol.declarations.some((n: Node)=>!isNodeDescendantOf(n, limit))){
+		// 			// has at least one declaration above limit -> we are capturing it
+		// 			if(symbols.indexOf(symbol) == -1)symbols.push(symbol);
+		// 		}
+		// 	}
+		// 	forEachChild(node, cb);
+		// }
 
-        function checkFunctionExpressionOrObjectLiteralMethod(node: FunctionExpression | MethodDeclaration, checkMode?: CheckMode): Type {
-            Debug.assert(node.kind !== SyntaxKind.MethodDeclaration || isObjectLiteralMethod(node));
+		function checkFunctionExpressionOrObjectLiteralMethod(node: FunctionExpression | MethodDeclaration, checkMode?: CheckMode): Type {
+			let type = _checkFunctionExpressionOrObjectLiteralMethod(node, checkMode);
+			let captured : Symbol[] = [];
+			if(node.body){
+				let variables: Symbol[] = [];
+				getUsedVariables(node.body, variables);
+				for(let v of variables){
+					if(v.declarations.some((n: Node)=>!isNodeDescendantOf(n, node))){
+						// has at least one declaration above limit -> we are capturing it
+						if(captured.indexOf(v) == -1)captured.push(v);
+					}
+				}
+			}
+			let lifeTime : Symbol|undefined = undefined;
+			for(let symbol of captured){
+				let type = getTypeOfSymbol(getMergedSymbol(symbol));
+				if(!type.lifeTime)continue;
+				if(!lifeTime || isLifeTimeRelated(lifeTime, type.lifeTime)){
+					lifeTime = type.lifeTime;
+				}
+			}
+			if(lifeTime){
+				type = tidyAnnotations({lifeTime: lifeTime, __proto__: type}  as any);
+			}
+			return type;
+		}
+
+        function _checkFunctionExpressionOrObjectLiteralMethod(node: FunctionExpression | MethodDeclaration, checkMode?: CheckMode): Type {
+			Debug.assert(node.kind !== SyntaxKind.MethodDeclaration || isObjectLiteralMethod(node));
 
             // The identityMapper object is used to indicate that function expressions are wildcards
             if (checkMode === CheckMode.SkipContextSensitive && isContextSensitive(node)) {
@@ -21453,9 +21509,30 @@ namespace ts {
             const type = getReturnTypeFromAnnotation(node);
             return type && ((functionFlags & FunctionFlags.AsyncGenerator) === FunctionFlags.Async) ?
                 getAwaitedType(type) || errorType : type;
-        }
+		}
 
-        function checkFunctionExpressionOrObjectLiteralMethodDeferred(node: ArrowFunction | FunctionExpression | MethodDeclaration) {
+		function checkFunctionExpressionOrObjectLiteralMethodDeferred(node: ArrowFunction | FunctionExpression | MethodDeclaration) {
+			_checkFunctionExpressionOrObjectLiteralMethodDeferred(node);
+			let captured : Symbol[] = [];
+			if(node.body){
+				// let cb = (n: Node)=>getSymbolsDeclaredAbove(n, node, cb, captured);
+				// cb(node.body);
+			}
+			let lifeTime : Symbol|undefined = undefined;
+			for(let symbol of captured){
+				let type = getTypeOfSymbol(getMergedSymbol(symbol));
+				if(!type.lifeTime)continue;
+				if(!lifeTime || isLifeTimeRelated(lifeTime, type.lifeTime)){
+					lifeTime = type.lifeTime;
+				}
+			}
+			/*if(lifeTime){
+				type = tidyAnnotations({lifeTime: lifeTime, __proto__: type}  as any);
+			}
+			return type;*/
+		}
+
+        function _checkFunctionExpressionOrObjectLiteralMethodDeferred(node: ArrowFunction | FunctionExpression | MethodDeclaration) {
             Debug.assert(node.kind !== SyntaxKind.MethodDeclaration || isObjectLiteralMethod(node));
 
             const functionFlags = getFunctionFlags(node);
@@ -22599,7 +22676,48 @@ namespace ts {
                 return checkAssertionWorker(tag, tag.typeExpression!.type, node.expression, checkMode);
             }
             return checkExpression(node.expression, checkMode);
-        }
+		}
+		
+		function getUsedVariables(node: Node|undefined, variables: Symbol[] = []){
+			if(!node)return;
+			if(isTypeNode(node))return;
+			switch(node.kind){
+				case SyntaxKind.Identifier:
+					let symbol = getResolvedSymbol(<Identifier>node);
+					if(symbol.flags & SymbolFlags.Variable && variables.indexOf(symbol) == -1)
+						variables.push(symbol);
+					break;
+				case SyntaxKind.PropertyAccessExpression:
+					getUsedVariables((<PropertyAccessExpression>node).expression, variables);
+					break;
+				case SyntaxKind.VariableDeclaration:
+					getUsedVariables((<VariableDeclaration>node).initializer, variables);
+					break;
+				case SyntaxKind.PropertyAssignment:
+					getUsedVariables((<PropertyAssignment>node).initializer, variables);
+					break;
+				case SyntaxKind.BindingElement:
+					getUsedVariables((<BindingElement>node).initializer, variables);
+					break;
+				case SyntaxKind.BreakStatement:
+				case SyntaxKind.TypeAliasDeclaration:
+					break;
+				case SyntaxKind.LabeledStatement:
+					getUsedVariables((<LabeledStatement>node).statement, variables);
+					break;
+				case SyntaxKind.MethodDeclaration:
+					for(let param of (<MethodDeclaration>node).parameters){
+						getUsedVariables(param, variables);
+					}
+					getUsedVariables((<MethodDeclaration>node).body, variables);
+					break;
+				case SyntaxKind.AsExpression:
+					getUsedVariables((<AsExpression>node).expression, variables);
+					break;
+				default:
+					forEachChild(node, (n:Node)=>getUsedVariables(n, variables));
+			}
+		}
 
         function checkExpressionWorker(node: Expression, checkMode: CheckMode | undefined, forceTuple?: boolean): Type {
             switch (node.kind) {
