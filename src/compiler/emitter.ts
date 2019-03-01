@@ -681,7 +681,9 @@ namespace ts {
                     case SyntaxKind.UnionType:
                         return emitUnionType(<UnionTypeNode>node);
                     case SyntaxKind.IntersectionType:
-                        return emitIntersectionType(<IntersectionTypeNode>node);
+						return emitIntersectionType(<IntersectionTypeNode>node);
+					case SyntaxKind.ConcatenationType:
+                        return emitConcatenationType(<ConcatenationTypeNode>node);
                     case SyntaxKind.ConditionalType:
                         return emitConditionalType(<ConditionalTypeNode>node);
                     case SyntaxKind.InferType:
@@ -1346,6 +1348,10 @@ namespace ts {
 
         function emitIntersectionType(node: IntersectionTypeNode) {
             emitList(node, node.types, ListFormat.IntersectionTypeConstituents);
+		}
+		
+		function emitConcatenationType(node: ConcatenationTypeNode) {
+            emitList(node, node.types, ListFormat.ConcatenationTypeConstituents);
         }
 
         function emitConditionalType(node: ConditionalTypeNode) {
@@ -2878,6 +2884,10 @@ namespace ts {
                 case ListFormat.AmpersandDelimited:
                     writeSpace();
                     writePunctuation("&");
+					break;
+				case ListFormat.PlusDelimited:
+                    writeSpace();
+                    writePunctuation("+");
                     break;
             }
         }

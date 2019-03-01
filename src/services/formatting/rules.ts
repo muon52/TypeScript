@@ -420,8 +420,9 @@ namespace ts.formatting {
             case SyntaxKind.ExportSpecifier:
             case SyntaxKind.ImportSpecifier:
             case SyntaxKind.TypePredicate:
-            case SyntaxKind.UnionType:
+			case SyntaxKind.UnionType:
             case SyntaxKind.IntersectionType:
+			case SyntaxKind.ConcatenationType:
                 return true;
 
             // equals in binding elements: function foo([[x, y] = [1, 2]])

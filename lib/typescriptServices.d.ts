@@ -412,7 +412,8 @@ declare namespace ts {
         FirstJSDocNode = 281,
         LastJSDocNode = 303,
         FirstJSDocTagNode = 292,
-        LastJSDocTagNode = 303
+		LastJSDocTagNode = 303,
+		ConcatenationType = 304
     }
     enum NodeFlags {
         None = 0,

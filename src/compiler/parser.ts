@@ -179,7 +179,9 @@ namespace ts {
                 return visitNodes(cbNode, cbNodes, (<TupleTypeNode>node).elementTypes);
             case SyntaxKind.UnionType:
             case SyntaxKind.IntersectionType:
-                return visitNodes(cbNode, cbNodes, (<UnionOrIntersectionTypeNode>node).types);
+				return visitNodes(cbNode, cbNodes, (<UnionOrIntersectionTypeNode>node).types);
+			case SyntaxKind.ConcatenationType:
+				return visitNodes(cbNode, cbNodes, (<ConcatenationTypeNode>node).types);
             case SyntaxKind.ConditionalType:
                 return visitNode(cbNode, (<ConditionalTypeNode>node).checkType) ||
                     visitNode(cbNode, (<ConditionalTypeNode>node).extendsType) ||
@@ -3232,7 +3234,7 @@ namespace ts {
             return parsePostfixTypeOrHigher();
         }
 
-        function parseUnionOrIntersectionType(kind: SyntaxKind.UnionType | SyntaxKind.IntersectionType, parseConstituentType: () => TypeNode, operator: SyntaxKind.BarToken | SyntaxKind.AmpersandToken): TypeNode {
+        function parseUnionOrIntersectionOrConcatenationType(kind: SyntaxKind.UnionType | SyntaxKind.IntersectionType | SyntaxKind.ConcatenationType, parseConstituentType: () => TypeNode, operator: SyntaxKind.BarToken | SyntaxKind.AmpersandToken | SyntaxKind.PlusToken): TypeNode {
             parseOptional(operator);
             let type = parseConstituentType();
             if (token() === operator) {
@@ -3240,19 +3242,23 @@ namespace ts {
                 while (parseOptional(operator)) {
                     types.push(parseConstituentType());
                 }
-                const node = <UnionOrIntersectionTypeNode>createNode(kind, type.pos);
+                const node = <UnionOrIntersectionTypeNode | ConcatenationTypeNode>createNode(kind, type.pos);
                 node.types = createNodeArray(types, type.pos);
                 type = finishNode(node);
             }
             return type;
+		}
+		
+		function parseConcatenationTypeOrHigher(): TypeNode {
+            return parseUnionOrIntersectionOrConcatenationType(SyntaxKind.ConcatenationType, parseTypeOperatorOrHigher, SyntaxKind.PlusToken);
         }
 
         function parseIntersectionTypeOrHigher(): TypeNode {
-            return parseUnionOrIntersectionType(SyntaxKind.IntersectionType, parseTypeOperatorOrHigher, SyntaxKind.AmpersandToken);
+            return parseUnionOrIntersectionOrConcatenationType(SyntaxKind.IntersectionType, parseConcatenationTypeOrHigher, SyntaxKind.AmpersandToken);
         }
 
         function parseUnionTypeOrHigher(): TypeNode {
-            return parseUnionOrIntersectionType(SyntaxKind.UnionType, parseIntersectionTypeOrHigher, SyntaxKind.BarToken);
+            return parseUnionOrIntersectionOrConcatenationType(SyntaxKind.UnionType, parseIntersectionTypeOrHigher, SyntaxKind.BarToken);
         }
 
         function isStartOfFunctionType(): boolean {

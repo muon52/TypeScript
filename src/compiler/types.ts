@@ -304,7 +304,8 @@ namespace ts {
         ConstructorType,
         TypeQuery,
         TypeLiteral,
-        ArrayType,
+		ArrayType,
+		ConcatenationType,
         TupleType,
         OptionalType,
         RestType,
@@ -1194,6 +1195,11 @@ namespace ts {
         kind: SyntaxKind.ArrayType;
         elementType: TypeNode;
     }
+
+	export interface ConcatenationTypeNode extends TypeNode{
+		kind: SyntaxKind.ConcatenationType;
+		types: NodeArray<TypeNode>;
+	}
 
     export interface TupleTypeNode extends TypeNode {
         kind: SyntaxKind.TupleType;
@@ -3868,6 +3874,7 @@ namespace ts {
         /* @internal */
 		ContainsAnyFunctionType = 1 << 29,  // Type is or contains the anyFunctionType
 		LifeTime				= 1 << 30,  // Type is a lifetime type
+		Concatenation			= 1 << 31,  // Type is a String concatenation
 
 
         /* @internal */
@@ -4017,7 +4024,11 @@ namespace ts {
         /* @internal */ constructSignatures?: ReadonlyArray<Signature>; // Construct signatures of type
         /* @internal */ stringIndexInfo?: IndexInfo;      // String indexing info
         /* @internal */ numberIndexInfo?: IndexInfo;      // Numeric indexing info
-    }
+	}
+	
+	export interface ConcatenationType extends Type{
+		types: Type[];
+	}
 
     /** Class and interface types (ObjectFlags.Class and ObjectFlags.Interface). */
     export interface InterfaceType extends ObjectType {
@@ -5572,8 +5583,9 @@ namespace ts {
         NotDelimited = 0,               // There is no delimiter between list items (default).
         BarDelimited = 1 << 2,          // Each list item is space-and-bar (" |") delimited.
         AmpersandDelimited = 1 << 3,    // Each list item is space-and-ampersand (" &") delimited.
-        CommaDelimited = 1 << 4,        // Each list item is comma (",") delimited.
-        DelimitersMask = BarDelimited | AmpersandDelimited | CommaDelimited,
+		CommaDelimited = 1 << 4,        // Each list item is comma (",") delimited.
+		PlusDelimited = 1 << 20,		// Each list item is comma ("+") delimited.
+        DelimitersMask = BarDelimited | AmpersandDelimited | CommaDelimited | PlusDelimited,
 
         AllowTrailingComma = 1 << 5,    // Write a trailing comma (",") if present.
 
@@ -5599,7 +5611,7 @@ namespace ts {
         NoInterveningComments = 1 << 17, // Do not emit comments between each node
 
         NoSpaceIfEmpty = 1 << 18,       // If the literal is empty, do not add spaces between braces.
-        SingleElement = 1 << 19,
+		SingleElement = 1 << 19,
 
         // Precomputed Formats
         Modifiers = SingleLine | SpaceBetweenSiblings | NoInterveningComments,
@@ -5609,7 +5621,8 @@ namespace ts {
 
         TupleTypeElements = CommaDelimited | SpaceBetweenSiblings | SingleLine,
         UnionTypeConstituents = BarDelimited | SpaceBetweenSiblings | SingleLine,
-        IntersectionTypeConstituents = AmpersandDelimited | SpaceBetweenSiblings | SingleLine,
+		IntersectionTypeConstituents = AmpersandDelimited | SpaceBetweenSiblings | SingleLine,
+		ConcatenationTypeConstituents = PlusDelimited | SpaceBetweenSiblings | SingleLine,
         ObjectBindingPatternElements = SingleLine | AllowTrailingComma | SpaceBetweenBraces | CommaDelimited | SpaceBetweenSiblings | NoSpaceIfEmpty,
         ArrayBindingPatternElements = SingleLine | AllowTrailingComma | CommaDelimited | SpaceBetweenSiblings | NoSpaceIfEmpty,
         ObjectLiteralExpressionProperties = PreserveLines | CommaDelimited | SpaceBetweenSiblings | SpaceBetweenBraces | Indented | Braces | NoSpaceIfEmpty,

@@ -406,7 +406,8 @@ namespace ts {
                 case SyntaxKind.TypeQuery:
                 case SyntaxKind.TypeReference:
                 case SyntaxKind.UnionType:
-                case SyntaxKind.IntersectionType:
+				case SyntaxKind.IntersectionType:
+				case SyntaxKind.ConcatenationType:
                 case SyntaxKind.ConditionalType:
                 case SyntaxKind.ParenthesizedType:
                 case SyntaxKind.ThisType:
@@ -1919,8 +1920,10 @@ namespace ts {
                     return serializeTypeReferenceNode(<TypeReferenceNode>node);
 
                 case SyntaxKind.IntersectionType:
-                case SyntaxKind.UnionType:
-                    return serializeUnionOrIntersectionType(<UnionOrIntersectionTypeNode>node);
+				case SyntaxKind.UnionType:
+					return serializeUnionOrIntersectionType(<UnionOrIntersectionTypeNode>node);
+				case SyntaxKind.ConcatenationType:
+                    return serializeConcatenationType(/*<ConcatenationTypeNode>node*/);
 
                 case SyntaxKind.TypeQuery:
                 case SyntaxKind.TypeOperator:
@@ -1978,6 +1981,10 @@ namespace ts {
 
             // If we were able to find common type, use it
             return serializedUnion || createVoidZero(); // Fallback is only hit if all union constituients are null/undefined/never
+		}
+		
+		function serializeConcatenationType(/*node: ConcatenationTypeNode*/): SerializedTypeNode {
+            return createIdentifier("Object");
         }
 
         /**

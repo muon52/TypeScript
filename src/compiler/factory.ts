@@ -788,6 +788,18 @@ namespace ts {
 
     export function updateIntersectionTypeNode(node: IntersectionTypeNode, types: NodeArray<TypeNode>) {
         return updateUnionOrIntersectionTypeNode(node, types);
+	}
+	
+	export function updateConcatenationTypeNode(node: ConcatenationTypeNode, types: NodeArray<TypeNode>) {
+        return node.types !== types
+            ? updateNode(createConcatenationTypeNode(types), node)
+            : node;
+	}
+	
+	export function createConcatenationTypeNode(types: ReadonlyArray<TypeNode>) {
+        const node = createSynthesizedNode(SyntaxKind.ConcatenationType) as ConcatenationTypeNode;
+        node.types = parenthesizeElementTypeMembers(types);
+        return node;
     }
 
     export function createUnionOrIntersectionTypeNode(kind: SyntaxKind.UnionType | SyntaxKind.IntersectionType, types: ReadonlyArray<TypeNode>) {
@@ -4275,7 +4287,8 @@ namespace ts {
             case SyntaxKind.UnionType:
             case SyntaxKind.IntersectionType:
             case SyntaxKind.FunctionType:
-            case SyntaxKind.ConstructorType:
+			case SyntaxKind.ConstructorType:
+			case SyntaxKind.ConcatenationType:
                 return createParenthesizedType(member);
         }
         return parenthesizeConditionalTypeMember(member);

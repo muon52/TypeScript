@@ -3367,6 +3367,16 @@ namespace ts {
                         }
                         return undefined!; // TODO: GH#18217
                     }
+				}
+				if (type.flags & TypeFlags.Concatenation) {
+                    const types = (<ConcatenationType>type).types;
+                    const typeNodes = mapToTypeNodes(types, context, /*isBareList*/ true);
+                    if (typeNodes && typeNodes.length > 0) {
+                        return createConcatenationTypeNode(typeNodes);
+                    }
+                    else {
+                        return undefined!; // TODO: GH#18217
+                    }
                 }
                 if (objectFlags & (ObjectFlags.Anonymous | ObjectFlags.Mapped)) {
                     Debug.assert(!!(type.flags & TypeFlags.Object));
@@ -4429,8 +4439,9 @@ namespace ts {
                     case SyntaxKind.ArrayType:
                     case SyntaxKind.TupleType:
                     case SyntaxKind.UnionType:
-                    case SyntaxKind.IntersectionType:
-                    case SyntaxKind.ParenthesizedType:
+					case SyntaxKind.IntersectionType:
+					case SyntaxKind.ConcatenationType:
+					case SyntaxKind.ParenthesizedType:
                         return isDeclarationVisible(node.parent);
 
                     // Default binding, import specifier and namespace import is visible
@@ -9236,6 +9247,15 @@ namespace ts {
                     aliasSymbol, getTypeArgumentsForAliasSymbol(aliasSymbol));
             }
             return links.resolvedType;
+		}
+		
+		function getTypeFromConcatenationTypeNode(node: ConcatenationTypeNode): Type {
+            const links = getNodeLinks(node);
+            if (!links.resolvedType) {
+                //const aliasSymbol = getAliasSymbolForTypeNode(node);
+                links.resolvedType = createConcatenationType(map(node.types, getTypeFromTypeNode));
+            }
+            return links.resolvedType;
         }
 
         function createIndexType(type: InstantiableType | UnionOrIntersectionType, stringsOnly: boolean) {
@@ -9243,7 +9263,31 @@ namespace ts {
             result.type = type;
             result.stringsOnly = stringsOnly;
             return result;
-        }
+		}
+		
+		function createConcatenationType(types: ReadonlyArray<Type>){
+			const result = <ConcatenationType>createType(TypeFlags.Concatenation);
+			let typeList: Type[] = [];
+			// if two neighboring types are StringLiterals merge them
+			let lastTypeIsString = false;
+			for( let type of types ){
+				if(type.flags & TypeFlags.StringLiteral){
+					if(!lastTypeIsString){
+						typeList.push(type);
+						lastTypeIsString = true;
+						continue;
+					}
+					let lastType = typeList[typeList.length - 1] as StringLiteralType;
+					typeList[typeList.length - 1] = getFreshTypeOfLiteralType(getLiteralType(lastType.value + (<StringLiteralType>type).value));
+					continue;
+				}
+				typeList.push(type);
+				lastTypeIsString = false;
+			}
+			if(typeList.length === 1)return typeList[0];
+			result.types = typeList;
+            return result;
+		}
 
         function getIndexTypeForGenericType(type: InstantiableType | UnionOrIntersectionType, stringsOnly: boolean) {
             return stringsOnly ?
@@ -9692,8 +9736,8 @@ namespace ts {
                 node = node.parent;
             }
             return false;
-        }
-
+		}
+	
         function getTypeFromConditionalTypeNode(node: ConditionalTypeNode): Type {
             const links = getNodeLinks(node);
             if (!links.resolvedType) {
@@ -10094,7 +10138,9 @@ namespace ts {
                 case SyntaxKind.UnionType:
                     return getTypeFromUnionTypeNode(<UnionTypeNode>node);
                 case SyntaxKind.IntersectionType:
-                    return getTypeFromIntersectionTypeNode(<IntersectionTypeNode>node);
+					return getTypeFromIntersectionTypeNode(<IntersectionTypeNode>node);
+				case SyntaxKind.ConcatenationType:
+                    return getTypeFromConcatenationTypeNode(<ConcatenationTypeNode>node);
                 case SyntaxKind.JSDocNullableType:
                     return getTypeFromJSDocNullableTypeNode(<JSDocNullableType>node);
                 case SyntaxKind.JSDocOptionalType:
@@ -10533,7 +10579,7 @@ namespace ts {
 			}
             const flags = type.flags;
             if (flags & TypeFlags.TypeParameter) {
-                return mapper(type);
+				return mapper(type);
             }
             if (flags & TypeFlags.Object) {
                 const objectFlags = (<ObjectType>type).objectFlags;
@@ -10563,7 +10609,12 @@ namespace ts {
                 const types = (<IntersectionType>type).types;
                 const newTypes = instantiateTypes(types, mapper);
                 return newTypes !== types ? getIntersectionType(newTypes, type.aliasSymbol, instantiateTypes(type.aliasTypeArguments, mapper)) : type;
-            }
+			}
+			if (flags & TypeFlags.Concatenation) {
+                const types = (<ConcatenationType>type).types;
+                const newTypes = instantiateTypes(types, mapper);
+                return newTypes !== types ? createConcatenationType(newTypes) : type;
+			}
             if (flags & TypeFlags.Index) {
                 return getIndexType(instantiateType((<IndexType>type).type, mapper));
             }
@@ -11259,6 +11310,10 @@ namespace ts {
 			if(source.constant && !target.constant)return false;
 			if(source.lifeTime)return checkTypeRelatedTo(source, target, relation, /*errorNode*/ undefined);
 
+			if(source.flags & TypeFlags.Concatenation){
+				if(isTypeRelatedTo(stringType, target, relation))return true;
+			}
+
             if (source.flags & TypeFlags.Literal && source.flags & TypeFlags.FreshLiteral) {
                 source = (<FreshableType>source).regularType;
             }
@@ -11457,6 +11512,11 @@ namespace ts {
 						reportRelationError(headMessage, source, target);
 					}
 					return Ternary.False;
+				}
+
+				if( source.flags & TypeFlags.Concatenation ){
+					let res = isRelatedTo(stringType, target, reportErrors, headMessage);
+					if(res !== Ternary.Maybe)return res;
 				}
 
                 if (source.flags & TypeFlags.Literal && source.flags & TypeFlags.FreshLiteral) {
@@ -21758,7 +21818,7 @@ namespace ts {
             }
             return false;
         }
-
+		
         function isTypeAssignableToKind(source: Type, kind: TypeFlags, strict?: boolean): boolean {
             if (source.flags & kind) {
                 return true;
@@ -22158,9 +22218,13 @@ namespace ts {
                         // Operands of an enum type are treated as having the primitive type Number.
                         // If both operands are of the Number primitive type, the result is of the Number primitive type.
                         resultType = numberType;
-                    }
+					}
+					else if (isTypeAssignableToKind(leftType, TypeFlags.StringLiteral, /*strict*/ true) && isTypeAssignableToKind(rightType, TypeFlags.StringLiteral, /*strict*/ true)) {
+						// If one or both operands are of the String primitive type, the result is of the String primitive type.
+						resultType = getFreshTypeOfLiteralType(getLiteralType((leftType as StringLiteralType).value + (rightType as StringLiteralType).value));
+					}
                     else if (isTypeAssignableToKind(leftType, TypeFlags.StringLike, /*strict*/ true) || isTypeAssignableToKind(rightType, TypeFlags.StringLike, /*strict*/ true)) {
-                            // If one or both operands are of the String primitive type, the result is of the String primitive type.
+							// If one or both operands are of the String primitive type, the result is of the String primitive type.
                             resultType = stringType;
                     }
                     else if (isTypeAny(leftType) || isTypeAny(rightType)) {
@@ -22731,7 +22795,7 @@ namespace ts {
                     return nullWideningType;
                 case SyntaxKind.NoSubstitutionTemplateLiteral:
                 case SyntaxKind.StringLiteral:
-                    return getFreshTypeOfLiteralType(getLiteralType((node as StringLiteralLike).text));
+					return getFreshTypeOfLiteralType(getLiteralType((node as StringLiteralLike).text));
                 case SyntaxKind.NumericLiteral:
                     checkGrammarNumericLiteral(node as NumericLiteral);
                     return getFreshTypeOfLiteralType(getLiteralType(+(node as NumericLiteral).text));
@@ -23498,6 +23562,10 @@ namespace ts {
             }
             checkGrammarForDisallowedTrailingComma(node.elementTypes);
             forEach(node.elementTypes, checkSourceElement);
+		}
+		
+		function checkConcatenationType(node: ConcatenationTypeNode) {
+            forEach(node.types, checkSourceElement);
         }
 
         function checkUnionOrIntersectionType(node: UnionOrIntersectionTypeNode) {
@@ -27439,7 +27507,9 @@ namespace ts {
                     return checkTupleType(<TupleTypeNode>node);
                 case SyntaxKind.UnionType:
                 case SyntaxKind.IntersectionType:
-                    return checkUnionOrIntersectionType(<UnionOrIntersectionTypeNode>node);
+					return checkUnionOrIntersectionType(<UnionOrIntersectionTypeNode>node);
+				case SyntaxKind.ConcatenationType:
+					return checkConcatenationType(<ConcatenationTypeNode>node);
                 case SyntaxKind.ParenthesizedType:
                 case SyntaxKind.OptionalType:
                 case SyntaxKind.RestType:

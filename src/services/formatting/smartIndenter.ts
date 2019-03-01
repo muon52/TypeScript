@@ -569,7 +569,8 @@ namespace ts.formatting {
                 case SyntaxKind.JsxFragment:
                     return childKind !== SyntaxKind.JsxClosingFragment;
                 case SyntaxKind.IntersectionType:
-                case SyntaxKind.UnionType:
+				case SyntaxKind.UnionType:
+				case SyntaxKind.ConcatenationType:
                     if (childKind === SyntaxKind.TypeLiteral) {
                         return false;
                     }

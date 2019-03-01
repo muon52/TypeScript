@@ -389,7 +389,11 @@ namespace ts {
 
             case SyntaxKind.IntersectionType:
                 return updateIntersectionTypeNode(<IntersectionTypeNode>node,
-                    nodesVisitor((<IntersectionTypeNode>node).types, visitor, isTypeNode));
+					nodesVisitor((<IntersectionTypeNode>node).types, visitor, isTypeNode));
+					
+			case SyntaxKind.ConcatenationType:
+				return updateConcatenationTypeNode(<ConcatenationTypeNode>node,
+					nodesVisitor((<ConcatenationTypeNode>node).types, visitor, isTypeNode));
 
             case SyntaxKind.ConditionalType:
                 return updateConditionalTypeNode(<ConditionalTypeNode>node,

@@ -5378,6 +5378,10 @@ namespace ts {
 
     export function isIntersectionTypeNode(node: Node): node is IntersectionTypeNode {
         return node.kind === SyntaxKind.IntersectionType;
+	}
+	
+	export function isConcatenationTypeNode(node: Node): node is ConcatenationTypeNode {
+        return node.kind === SyntaxKind.ConcatenationType;
     }
 
     export function isConditionalTypeNode(node: Node): node is ConditionalTypeNode {
